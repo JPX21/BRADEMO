@@ -1,121 +1,499 @@
+
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
+import 'post.dart';
+import 'package:http/http.dart' as http;
 
 void main() {
-  runApp(const MyApp());
+  runApp(MaterialApp(
+    home: PostWidget()
+  ));
 }
 
-class MyApp extends StatelessWidget {
-  const MyApp({super.key});
+class PostWidget extends StatefulWidget {
+  @override
+  State<StatefulWidget> createState() {
+   return PostWidgetState();
+  }
+}
 
-  // This widget is the root of your application.
+class PostWidgetState extends State<PostWidget>{
+  Post post = Post(0, 0, "title", "body");
+
+  @override
+  void initState() {
+    super.initState();
+    getPost();
+  }
+
+  Future<void> getPost() async{
+    final url = Uri.https(
+                  'jsonplaceholder.typicode.com',
+                  'posts/3'
+                );
+    final response = await http.get(url,
+                    headers: {
+                      "Content-type":
+                      "application/json"
+                    }
+                  );
+    post = Post
+            .fromJson(response.body);
+    setState(() {
+
+    },);
+  }
+
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'Flutter Demo',
-      theme: ThemeData(
-        // This is the theme of your application.
-        //
-        // TRY THIS: Try running your application with "flutter run". You'll see
-        // the application has a purple toolbar. Then, without quitting the app,
-        // try changing the seedColor in the colorScheme below to Colors.green
-        // and then invoke "hot reload" (save your changes or press the "hot
-        // reload" button in a Flutter-supported IDE, or press "r" if you used
-        // the command line to start the app).
-        //
-        // Notice that the counter didn't reset back to zero; the application
-        // state is not lost during the reload. To reset the state, use hot
-        // restart instead.
-        //
-        // This works for code too, not just values: Most code changes can be
-        // tested with just a hot reload.
-        colorScheme: .fromSeed(seedColor: Colors.deepPurple),
+    return Scaffold(
+      body: Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Text("${post.id}"),
+            Text("${post.title}"),
+          ],
+        ),
       ),
-      home: const MyHomePage(title: 'Flutter Demo Home Page'),
+
+      // acesso à tela com as operações HTTP
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => PostOperationsPage(),
+            ),
+          );
+        },
+        icon: Icon(Icons.http),
+        label: Text('Operações HTTP'),
+      ),
     );
   }
 }
 
-class MyHomePage extends StatefulWidget {
-  const MyHomePage({super.key, required this.title});
+// tela para as operações HTTP
 
-  // This widget is the home page of your application. It is stateful, meaning
-  // that it has a State object (defined below) that contains fields that affect
-  // how it looks.
-
-  // This class is the configuration for the state. It holds the values (in this
-  // case the title) provided by the parent (in this case the App widget) and
-  // used by the build method of the State. Fields in a Widget subclass are
-  // always marked "final".
-
-  final String title;
-
+class PostOperationsPage extends StatefulWidget {
   @override
-  State<MyHomePage> createState() => _MyHomePageState();
+  State<PostOperationsPage> createState() =>
+      PostOperationsPageState();
 }
 
-class _MyHomePageState extends State<MyHomePage> {
-  int _counter = 0;
+class PostOperationsPageState extends State<PostOperationsPage> {
+  final TextEditingController idController =
+      TextEditingController(text: '3');
 
-  void _incrementCounter() {
+  final TextEditingController userIdController =
+      TextEditingController(text: '1');
+
+  final TextEditingController titleController =
+      TextEditingController();
+
+  final TextEditingController bodyController =
+      TextEditingController();
+
+  List<Post> posts = [];
+
+  bool loading = false;
+
+  String message = 'Selecione uma operação.';
+
+  final Map<String, String> headers = {
+    'Content-Type': 'application/json; charset=UTF-8',
+  };
+
+  Uri postUrl([int? id]) {
+    return Uri.https(
+      'jsonplaceholder.typicode.com',
+      id == null ? 'posts' : 'posts/$id',
+    );
+  }
+
+  int readId() {
+    final id = int.tryParse(idController.text.trim());
+
+    if (id == null || id <= 0) {
+      throw Exception('Informe um ID de post válido.');
+    }
+
+    return id;
+  }
+
+  int readUserId() {
+    final userId = int.tryParse(userIdController.text.trim());
+
+    if (userId == null || userId <= 0) {
+      throw Exception('Informe um ID de usuário válido.');
+    }
+
+    return userId;
+  }
+
+  void validateContent() {
+    if (titleController.text.trim().isEmpty ||
+        bodyController.text.trim().isEmpty) {
+      throw Exception('Preencha o título e o conteúdo do post.');
+    }
+  }
+
+  Future<void> executeRequest(
+    Future<void> Function() request,
+  ) async {
+    if (loading) return;
+
     setState(() {
-      // This call to setState tells the Flutter framework that something has
-      // changed in this State, which causes it to rerun the build method below
-      // so that the display can reflect the updated values. If we changed
-      // _counter without calling setState(), then the build method would not be
-      // called again, and so nothing would appear to happen.
-      _counter++;
+      loading = true;
+      message = 'Executando requisição...';
+    });
+
+    try {
+      await request();
+    } catch (error) {
+      if (mounted) {
+        setState(() {
+          message = 'Erro: $error';
+        });
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          loading = false;
+        });
+      }
+    }
+  }
+
+  // GET recuperar um post pelo ID
+  Future<void> getPostById() async {
+    await executeRequest(() async {
+      final id = readId();
+
+      final response = await http.get(
+        postUrl(id),
+        headers: headers,
+      );
+
+      if (response.statusCode != 200) {
+        throw Exception('GET falhou: HTTP ${response.statusCode}');
+      }
+
+      final post = Post.fromJson(response.body);
+
+      if (!mounted) return;
+
+      setState(() {
+        posts = [post];
+        idController.text = post.id.toString();
+        userIdController.text = post.userId.toString();
+        titleController.text = post.title;
+        bodyController.text = post.body;
+        message = 'GET realizado com sucesso.';
+      });
+    });
+  }
+
+  // GET recuperar a lista de posts
+  Future<void> getPosts() async {
+    await executeRequest(() async {
+      final response = await http.get(
+        postUrl(),
+        headers: headers,
+      );
+
+      if (response.statusCode != 200) {
+        throw Exception(
+          'GET da lista falhou: HTTP ${response.statusCode}',
+        );
+      }
+
+      final List<dynamic> data = jsonDecode(response.body);
+
+      final List<Post> receivedPosts = data
+          .map((item) => Post.fromJson(jsonEncode(item)))
+          .toList();
+
+      if (!mounted) return;
+
+      setState(() {
+        posts = receivedPosts;
+        message = 'Lista recuperada: ${posts.length} posts.';
+      });
+    });
+  }
+
+  // POST criar um post
+  Future<void> createPost() async {
+    await executeRequest(() async {
+      validateContent();
+
+      final userId = readUserId();
+
+      final response = await http.post(
+        postUrl(),
+        headers: headers,
+        body: jsonEncode({
+          'userId': userId,
+          'title': titleController.text.trim(),
+          'body': bodyController.text.trim(),
+        }),
+      );
+
+      if (response.statusCode != 201 &&
+          response.statusCode != 200) {
+        throw Exception('POST falhou: HTTP ${response.statusCode}');
+      }
+
+      final createdPost = Post.fromJson(response.body);
+
+      if (!mounted) return;
+
+      setState(() {
+        posts = [
+          createdPost,
+          ...posts.where((item) => item.id != createdPost.id),
+        ];
+
+        idController.text = createdPost.id.toString();
+        message = 'POST realizado. ID retornado: ${createdPost.id}.';
+      });
+    });
+  }
+
+  //PUT atualizar um post
+  Future<void> updatePost() async {
+    await executeRequest(() async {
+      validateContent();
+
+      final id = readId();
+      final userId = readUserId();
+
+      final response = await http.put(
+        postUrl(id),
+        headers: headers,
+        body: jsonEncode({
+          'userId': userId,
+          'id': id,
+          'title': titleController.text.trim(),
+          'body': bodyController.text.trim(),
+        }),
+      );
+
+      if (response.statusCode != 200) {
+        throw Exception('PUT falhou: HTTP ${response.statusCode}');
+      }
+
+      final updatedPost = Post.fromJson(response.body);
+
+      if (!mounted) return;
+
+      setState(() {
+        final index = posts.indexWhere((item) => item.id == id);
+
+        if (index >= 0) {
+          posts[index] = updatedPost;
+        } else {
+          posts.insert(0, updatedPost);
+        }
+
+        message = 'PUT realizado para o post $id.';
+      });
+    });
+  }
+
+  //DELETE excluir um post
+  Future<void> deletePost() async {
+    await executeRequest(() async {
+      final id = readId();
+
+      final response = await http.delete(
+        postUrl(id),
+        headers: headers,
+      );
+
+      if (response.statusCode != 200 &&
+          response.statusCode != 204) {
+        throw Exception(
+          'DELETE falhou: HTTP ${response.statusCode}',
+        );
+      }
+
+      if (!mounted) return;
+
+      setState(() {
+        posts.removeWhere((item) => item.id == id);
+        message = 'DELETE realizado para o post $id.';
+      });
+    });
+  }
+
+  // Preencher os campos ao selecionar um post da lista
+  void selectPost(Post post) {
+    setState(() {
+      idController.text = post.id.toString();
+      userIdController.text = post.userId.toString();
+      titleController.text = post.title;
+      bodyController.text = post.body;
+      message = 'Post ${post.id} selecionado.';
     });
   }
 
   @override
+  void dispose() {
+    idController.dispose();
+    userIdController.dispose();
+    titleController.dispose();
+    bodyController.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    // This method is rerun every time setState is called, for instance as done
-    // by the _incrementCounter method above.
-    //
-    // The Flutter framework has been optimized to make rerunning build methods
-    // fast, so that you can just rebuild anything that needs updating rather
-    // than having to individually change instances of widgets.
     return Scaffold(
       appBar: AppBar(
-        // TRY THIS: Try changing the color here to a specific color (to
-        // Colors.amber, perhaps?) and trigger a hot reload to see the AppBar
-        // change color while the other colors stay the same.
-        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-        // Here we take the value from the MyHomePage object that was created by
-        // the App.build method, and use it to set our appbar title.
-        title: Text(widget.title),
+        title: Text('Operações HTTP'),
       ),
-      body: Center(
-        // Center is a layout widget. It takes a single child and positions it
-        // in the middle of the parent.
-        child: Column(
-          // Column is also a layout widget. It takes a list of children and
-          // arranges them vertically. By default, it sizes itself to fit its
-          // children horizontally, and tries to be as tall as its parent.
-          //
-          // Column has various properties to control how it sizes itself and
-          // how it positions its children. Here we use mainAxisAlignment to
-          // center the children vertically; the main axis here is the vertical
-          // axis because Columns are vertical (the cross axis would be
-          // horizontal).
-          //
-          // TRY THIS: Invoke "debug painting" (choose the "Toggle Debug Paint"
-          // action in the IDE, or press "p" in the console), to see the
-          // wireframe for each widget.
-          mainAxisAlignment: .center,
-          children: [
-            const Text('You have pushed the button this many times:'),
-            Text(
-              '$_counter',
-              style: Theme.of(context).textTheme.headlineMedium,
+      body: ListView(
+        padding: EdgeInsets.all(16),
+        children: [
+          Text(
+            'JSONPlaceholder - Posts',
+            style: Theme.of(context).textTheme.headlineSmall,
+          ),
+
+          SizedBox(height: 16),
+
+          Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: idController,
+                  keyboardType: TextInputType.number,
+                  decoration: InputDecoration(
+                    labelText: 'ID do post',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+              ),
+              SizedBox(width: 12),
+              Expanded(
+                child: TextField(
+                  controller: userIdController,
+                  keyboardType: TextInputType.number,
+                  decoration: InputDecoration(
+                    labelText: 'ID do usuário',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+              ),
+            ],
+          ),
+
+          SizedBox(height: 12),
+
+          TextField(
+            controller: titleController,
+            decoration: InputDecoration(
+              labelText: 'Título',
+              border: OutlineInputBorder(),
             ),
-          ],
-        ),
-      ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: _incrementCounter,
-        tooltip: 'Increment',
-        child: const Icon(Icons.add),
+          ),
+
+          SizedBox(height: 12),
+
+          TextField(
+            controller: bodyController,
+            minLines: 2,
+            maxLines: 4,
+            decoration: InputDecoration(
+              labelText: 'Conteúdo',
+              border: OutlineInputBorder(),
+              alignLabelWithHint: true,
+            ),
+          ),
+
+          SizedBox(height: 16),
+
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              ElevatedButton(
+                onPressed: loading ? null : getPostById,
+                child: Text('GET por ID'),
+              ),
+              ElevatedButton(
+                onPressed: loading ? null : getPosts,
+                child: Text('GET lista'),
+              ),
+              ElevatedButton(
+                onPressed: loading ? null : createPost,
+                child: Text('POST'),
+              ),
+              ElevatedButton(
+                onPressed: loading ? null : updatePost,
+                child: Text('PUT'),
+              ),
+              ElevatedButton(
+                onPressed: loading ? null : deletePost,
+                child: Text('DELETE'),
+              ),
+            ],
+          ),
+
+          SizedBox(height: 16),
+
+          if (loading) LinearProgressIndicator(),
+
+          SizedBox(height: 12),
+
+          Text(
+            message,
+            style: TextStyle(
+              color: message.startsWith('Erro:')
+                  ? Colors.red
+                  : Colors.indigo,
+            ),
+          ),
+
+          Divider(height: 32),
+
+          Text(
+            'Posts (${posts.length})',
+            style: Theme.of(context).textTheme.titleLarge,
+          ),
+
+          if (posts.isEmpty)
+            Padding(
+              padding: EdgeInsets.all(20),
+              child: Text(
+                'Nenhum post carregado. '
+                'Utilize GET por ID ou GET lista.',
+                textAlign: TextAlign.center,
+              ),
+            ),
+
+          ...posts.map(
+            (post) => Card(
+              child: ListTile(
+                leading: CircleAvatar(
+                  child: Text('${post.id}'),
+                ),
+                title: Text(post.title),
+                subtitle: Text(
+                  'Usuário: ${post.userId}\n${post.body}',
+                  maxLines: 3,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                isThreeLine: true,
+                onTap: () => selectPost(post),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
